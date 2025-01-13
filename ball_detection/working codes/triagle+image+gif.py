@@ -10,8 +10,6 @@ import os
 import numpy as np
 import cv2
 from PIL import Image  # Add this import for GIF handling
-import json
-
 
 
 # Basic tracking parameters
@@ -24,6 +22,11 @@ POSITION_HISTORY_SIZE = 6
 SMOOTHING_FACTOR = 0.6
 RECENT_POSITIONS_LENGTH = 8
 
+# Triangle parameters (new)
+TRIANGLE_HEIGHT = 30  # Height above the ball
+TRIANGLE_WIDTH = 20   # Width of the triangle base
+TRIANGLE_COLOR = (0, 0, 255)  # Green color (BGR)
+TRIANGLE_THICKNESS = 2  # Line thickness
 
 # Trail parameters (new)
 TRAIL_LENGTH = 20  # Number of previous positions to use
@@ -33,8 +36,8 @@ TRAIL_COLOR = (255, 255, 0)  # Yellow color in BGR
 EMA_ALPHA = 0.3    # Exponential moving average smoothing factor (0-1)
 
 
-# SOURCE_VIDEO_PATH = "/home/sahil/Desktop/Sportvot/Videos/Goal - ARIS KHAN.mp4"
-# OUTPUT_VIDEO_PATH = "/home/sahil/Desktop/Sportvot/Videos/EMA-1.mp4"
+SOURCE_VIDEO_PATH = "/home/sahil/Desktop/Sportvot/Videos/Goal - ARIS KHAN.mp4"
+OUTPUT_VIDEO_PATH = "/home/sahil/Desktop/Sportvot/Videos/EMA-1.mp4"
 PLAYER_MODEL_PATH = "/media/sahil/UBUNTU/best-100.pt"  # Add your model path here
 # GIF_ASSET_PATH = "/home/sahil/Downloads/explosion-12389_256.gif"  # Add your asset path here
 
@@ -69,83 +72,87 @@ def replace_outliers_based_on_distance(
 
 
 class BallTracker:
-    def __init__(self, config_path: str, source_video: str, output_path: str):
-        # Load configuration
-        with open(config_path, 'r') as f:
-            self.config = json.load(f)
-        
-        # Initialize basic tracker settings
-        if not os.path.exists(self.config["model_path"]):
-            raise FileNotFoundError(f"Model file not found: {self.config['model_path']}")
+    def __init__(self, model_path: str, source_video: str, output_path: str, 
+                 triangle_height: int = 30, triangle_width: int = 20,
+                 trail_length: int = TRAIL_LENGTH,
+                 trail_width: int = TRAIL_WIDTH,
+                 trail_speed: float = TRAIL_SPEED,
+                 overlay_type: str = OVERLAY_TYPE):
+        # Initialization code remains the same...
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model file not found: {model_path}")
         if not os.path.exists(source_video):
             raise FileNotFoundError(f"Video file not found: {source_video}")
         
-        self.model = YOLO(self.config["model_path"])
-        self.video_info = sv.VideoInfo.from_video_path(source_video)
-        self.frame_generator = sv.get_video_frames_generator(source_video)
-        self.output_path = output_path
-        
-        # Initialize tracking variables
         self.position_history = deque(maxlen=POSITION_HISTORY_SIZE)
         self.current_smooth_position = None
         self.recent_positions = deque(maxlen=RECENT_POSITIONS_LENGTH)
+        
+        self.model = YOLO(model_path)
+        self.video_info = sv.VideoInfo.from_video_path(source_video)
+        self.frame_generator = sv.get_video_frames_generator(source_video)
+        self.output_path = output_path
         self.frames_without_detection = 0
         self.kalman = None
         self.kalman_initialized = False
         self.video_writer = None
         self.last_valid_position = None
-        self.current_frame_idx = 0
-        
-        # Add trail parameters
-        self.trail_length = TRAIL_LENGTH
-        self.trail_width = TRAIL_WIDTH
-        self.trail_speed = TRAIL_SPEED
-        self.trail_color = TRAIL_COLOR
-        self.trail_positions = deque(maxlen=TRAIL_LENGTH)
-        self.trail_alpha = np.linspace(0.2, 1.0, TRAIL_LENGTH)
-        
-        # EMA parameters
-        self.ema_alpha = EMA_ALPHA
-        self.ema_position = None
-        self.ema_positions = deque(maxlen=TRAIL_LENGTH)
-        
-        # Load overlay assets
-        self.load_overlay_assets()
 
-    def load_overlay_assets(self):
-        """Load GIF/Image assets with consistent dimensioning"""
+        self.overlay_type = overlay_type
+        self.current_frame_idx = 0
         self.gif_frames = None
         
-        # Load GIF if path is provided
-        if self.config["gif"]["overlay_path"]:
-            try:
-                if self.config["gif"]["overlay_path"].lower().endswith(('.gif', '.webp')):
-                    gif = Image.open(self.config["gif"]["overlay_path"])
-                    self.gif_frames = []
-                    
-                    # Calculate dimensions using configuration factors
-                    height_factor = float(self.config["gif"]["height_factor"])
-                    width_factor = float(self.config["gif"]["width_factor"])
-                    
-                    # Calculate absolute dimensions based on video size
-                    target_height = int(self.video_info.height * height_factor)
-                    target_width = int(self.video_info.width * width_factor)
-                    
-                    # Convert all frames with consistent dimensions
-                    try:
-                        for frame_idx in range(getattr(gif, 'n_frames', 1)):
-                            if hasattr(gif, 'seek'):
-                                gif.seek(frame_idx)
-                            frame = gif.convert('RGBA') if gif.mode != 'RGBA' else gif.copy()
-                            frame = frame.resize((target_width, target_height), Image.Resampling.LANCZOS)
-                            self.gif_frames.append(np.array(frame))
-                    except Exception as e:
-                        print(f"Warning: Error processing GIF frames: {str(e)}")
-                        if len(self.gif_frames) == 0:
-                            self.gif_frames = None
-            except Exception as e:
-                print(f"Warning: Failed to load GIF overlay: {str(e)}")
+        # Triangle parameters
+        self.triangle_height = triangle_height
+        self.triangle_width = triangle_width
 
+        # Trail parameters
+        self.trail_length = trail_length
+        self.trail_width = trail_width
+        self.trail_speed = trail_speed
+        self.trail_positions = deque(maxlen=trail_length)
+        self.trail_alpha = np.linspace(0.2, 1.0, trail_length)
+        
+        # EMA parameters
+        self.ema_position = None
+        self.ema_positions = deque(maxlen=trail_length)
+
+        # Load GIF/Image if needed
+        if overlay_type in ["image", "both"]:
+            self.load_overlay_asset()
+
+
+    def load_overlay_asset(self):
+        """Load and prepare the GIF or image overlay"""
+        try:
+            if GIF_ASSET_PATH.lower().endswith('.gif'):
+                # Load GIF
+                gif = Image.open(GIF_ASSET_PATH)
+                self.gif_frames = []
+                
+                # Convert all frames to RGBA numpy arrays
+                for frame_idx in range(gif.n_frames):
+                    gif.seek(frame_idx)
+                    # Convert to RGBA if not already
+                    if gif.mode != 'RGBA':
+                        frame = gif.convert('RGBA')
+                    else:
+                        frame = gif.copy()
+                    # Resize if needed (adjust size as needed)
+                    frame = frame.resize((50, 50), Image.Resampling.LANCZOS)
+                    self.gif_frames.append(np.array(frame))
+                
+            else:
+                # Load static image
+                img = Image.open(IMAGE_ASSET_PATH)
+                if img.mode != 'RGBA':
+                    img = img.convert('RGBA')
+                img = img.resize((50, 50), Image.Resampling.LANCZOS)
+                self.gif_frames = [np.array(img)]
+                
+        except Exception as e:
+            print(f"Warning: Failed to load overlay asset: {str(e)}")
+            self.gif_frames = None
 
     def overlay_image(self, frame: np.ndarray, position: np.ndarray) -> np.ndarray:
         """Overlay the GIF/image on the frame"""
@@ -184,49 +191,6 @@ class BallTracker:
             
         except Exception as e:
             print(f"Warning: Failed to overlay image/GIF: {str(e)}")
-            
-        return frame
-    
-    def overlay_gif(self, frame: np.ndarray, position: np.ndarray) -> np.ndarray:
-        """Overlay GIF using configuration-based positioning"""
-        if len(position) == 0 or self.gif_frames is None or len(self.gif_frames) == 0:
-            return frame
-            
-        try:
-            # Get current frame
-            overlay = self.gif_frames[self.current_frame_idx]
-            self.current_frame_idx = (self.current_frame_idx + 1) % len(self.gif_frames)
-            
-            # Get configuration offsets
-            x_offset = int(self.config["gif"]["x_offset"])
-            y_offset = int(self.config["gif"]["y_offset"])
-            
-            # Calculate position with offsets
-            x = int(position[0] - overlay.shape[1]/2 + x_offset)
-            y = int(position[1] - overlay.shape[0]/2 + y_offset)
-            
-            # Ensure within frame bounds
-            if (x < 0 or y < 0 or 
-                x + overlay.shape[1] > frame.shape[1] or 
-                y + overlay.shape[0] > frame.shape[0]):
-                return frame
-            
-            # Process alpha channel
-            alpha = overlay[:, :, 3] / 255.0
-            alpha = np.stack([alpha] * 3, axis=-1)
-            
-            # Get region of interest
-            roi = frame[y:y+overlay.shape[0], x:x+overlay.shape[1]]
-            
-            # Convert overlay RGB to BGR
-            bgr_overlay = cv2.cvtColor(overlay[:, :, :3], cv2.COLOR_RGB2BGR)
-            
-            # Blend images
-            blended = roi * (1 - alpha) + bgr_overlay * alpha
-            frame[y:y+overlay.shape[0], x:x+overlay.shape[1]] = blended.astype(np.uint8)
-            
-        except Exception as e:
-            print(f"Warning: Failed to overlay GIF: {str(e)}")
             
         return frame
 
@@ -331,38 +295,37 @@ class BallTracker:
 
 
     def draw_triangle_indicator(self, frame: np.ndarray, position: np.ndarray) -> np.ndarray:
-        """Draw triangle based on JSON configuration"""
+        """Draw a small filled inverted triangle above the ball, shifted upward"""
         if len(position) == 0:
             return frame
 
         try:
-            # Get triangle configuration
-            triangle_config = self.config["triangle"]
-            height = int(triangle_config["height"])
-            width = int(triangle_config["width"])
-            x_offset = int(triangle_config["x_offset"])
-            y_offset = int(triangle_config["y_offset"])
-            color = tuple(map(int, triangle_config["color"].split(',')))
+            # Calculate triangle vertices
+            ball_x, ball_y = int(position[0]), int(position[1])
             
-            # Calculate ball position with offsets
-            ball_x = int(position[0]) + x_offset
-            ball_y = int(position[1]) - y_offset
+            # Parameters for triangle size and offset
+            horizontal_offset = 3  # Shift triangle 3 pixels to the right
+            offset = 15  # Pixels to push the triangle further up
+            triangle_width = self.triangle_width  # Increase base width
+            triangle_height = self.triangle_height // 2  # Maintain height size
             
-            # Calculate triangle points using the same offset logic
-            top_point = (ball_x, ball_y)
-            left_point = (ball_x - width // 2, ball_y - height)
-            right_point = (ball_x + width // 2, ball_y - height)
+            # Adjusted triangle points for inverted triangle above the ball
+            top_point = (ball_x + horizontal_offset, ball_y - offset)  # Point closer to the ball
+            left_point = (ball_x - triangle_width // 2 + horizontal_offset, ball_y - triangle_height - offset)
+            right_point = (ball_x + triangle_width // 2 + horizontal_offset, ball_y - triangle_height - offset)
             
-            # Draw filled triangle
+            # Draw filled inverted triangle
             pts = np.array([top_point, left_point, right_point], np.int32)
             pts = pts.reshape((-1, 1, 2))
-            cv2.fillPoly(frame, [pts], color, cv2.LINE_AA)
+            cv2.fillPoly(frame, [pts], TRIANGLE_COLOR, cv2.LINE_AA)  # Green color
             
             return frame
-        
+
         except Exception as e:
-            print(f"Warning: Failed to draw triangle: {str(e)}")
+            print(f"Warning: Failed to draw filled inverted triangle: {str(e)}")
             return frame
+
+
 
     def setup_kalman_filter(self):
         """Initialize a new Kalman filter"""
@@ -641,32 +604,30 @@ class BallTracker:
                 self.video_writer.release()
 
 
-    
     def _process_frame(self, frame: np.ndarray):
-        """Process frame with configured overlays using consistent dimensions"""
+        """Process single frame with both triangle and image/GIF overlay"""
         try:
             ball_coords, confidence = self.detect_ball(frame)
             predicted_position = self.predict_ball_position(ball_coords, confidence)
             
+            # Create annotated frame
             annotated_frame = frame.copy()
             
+            # Draw trail first
             if len(predicted_position) > 0:
-                # Draw trail first (background layer)
                 annotated_frame = self.draw_trail(annotated_frame, predicted_position)
                 
-                # Apply overlays in order of layering
-                # Triangle first (if enabled)
-                if int(self.config["triangle"]["width"]) > 0:
+                # Apply overlays based on configuration
+                if self.overlay_type in ["triangle", "both"]:
                     annotated_frame = self.draw_triangle_indicator(annotated_frame, predicted_position)
                 
-                # GIF overlay last (if enabled)
-                if self.config["gif"]["overlay_path"]:
-                    annotated_frame = self.overlay_gif(annotated_frame, predicted_position)
+                if self.overlay_type in ["image", "both"]:
+                    annotated_frame = self.overlay_image(annotated_frame, predicted_position)
                 
             self.video_writer.write(annotated_frame)
 
         except Exception as e:
-            print(f"Warning: Frame processing failed: {str(e)}")
+            print(f"Warning: Frame processing failed: {str(e)}") 
 
     def _add_prediction_indicator(self, frame: np.ndarray):
         """Add prediction indicator with error handling"""
@@ -736,15 +697,12 @@ class BallTracker:
         return annotated_frame
 
 def main():
-    # Example usage
-    SOURCE_VIDEO_PATH = "/home/sahil/Desktop/Sportvot/211.mp4"
-    OUTPUT_VIDEO_PATH = "/home/sahil/Desktop/Sportvot/Videos/EMA-1.mp4"
-    CONFIG_PATH = "/home/sahil/Desktop/Sportvot/config.json"
-    
+    # Create tracker with customizable parameters
     tracker = BallTracker(
-        config_path=CONFIG_PATH,
+        model_path=PLAYER_MODEL_PATH,
         source_video=SOURCE_VIDEO_PATH,
-        output_path=OUTPUT_VIDEO_PATH
+        output_path=OUTPUT_VIDEO_PATH,
+         overlay_type="both"
     )
     
     tracker.process_video()
