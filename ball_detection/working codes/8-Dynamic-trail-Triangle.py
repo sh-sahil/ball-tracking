@@ -35,8 +35,7 @@ EMA_ALPHA = 0.3    # Exponential moving average smoothing factor (0-1)
 
 SOURCE_VIDEO_PATH = "/home/sahil/Desktop/Sportvot/Videos/Goal - ARIS KHAN.mp4"
 OUTPUT_VIDEO_PATH = "/home/sahil/Desktop/Sportvot/Videos/EMA.mp4"
-PLAYER_MODEL_PATH = "/media/sahil/UBUNTU/best-100.pt"  # Add your model path here
-# GIF_ASSET_PATH = "/home/sahil/Downloads/explosion-12389_256.gif"  # Add your asset path here
+PLAYER_MODEL_PATH = "/home/sahil/Desktop/Sportvot/best-100.pt"  # Add your model path here
 
 
 def replace_outliers_based_on_distance(
@@ -45,7 +44,6 @@ def replace_outliers_based_on_distance(
 ) -> List[np.ndarray]:
     last_valid_position: Union[np.ndarray, None] = None
     cleaned_positions: List[np.ndarray] = []
-
     for position in positions:
         if len(position) == 0:
             cleaned_positions.append(position)
@@ -216,7 +214,7 @@ class BallTracker:
             ball_x, ball_y = int(position[0]), int(position[1])
             
             # Parameters for triangle size and offset
-            horizontal_offset = 3  # Shift triangle 3 pixels to the right
+            horizontal_offset = 1  # Shift triangle 3 pixels to the right
             offset = 15  # Pixels to push the triangle further up
             triangle_width = self.triangle_width  # Increase base width
             triangle_height = self.triangle_height // 2  # Maintain height size
@@ -351,52 +349,6 @@ class BallTracker:
             print(f"Warning: Position prediction failed: {str(e)}")
             return np.array([])
 
-    
-    # def overlay_tracker_asset(self, frame: np.ndarray, position: np.ndarray) -> np.ndarray:
-    #     """Overlay the fire GIF animation with motion blur effect"""
-    #     if len(position) == 0 or self.gif_frames is None or len(self.gif_frames) == 0:
-    #         return frame
-            
-    #     try:
-    #         gif_frame = self.gif_frames[self.current_frame_idx]
-    #         self.current_frame_idx = (self.current_frame_idx + 1) % len(self.gif_frames)
-            
-    #         # Adjust the vertical offset here by changing the division factor
-    #         # Increase the number to move the ball up, decrease to move it down
-    #         vertical_offset = gif_frame.shape[0] * 0.75  # Changed from /2 to *0.75 to move it up
-            
-    #         # Calculate position with adjusted vertical offset
-    #         x = int(position[0] - gif_frame.shape[1]/2)
-    #         y = int(position[1] - vertical_offset)  # Using the new vertical offset
-    #         center_x = int(position[0])
-    #         center_y = int(position[1])
-            
-    #         if self.last_valid_position is not None:
-    #             last_x, last_y = self.last_valid_position
-    #             if abs(center_x - last_x) > 5 or abs(center_y - last_y) > 5:
-    #                 pts = np.array([[center_x, center_y], [last_x, last_y]], np.int32)
-    #                 cv2.polylines(frame, [pts], False, (255, 255, 255), 2, cv2.LINE_AA)
-    #                 cv2.GaussianBlur(frame, (3, 3), 0, frame)
-            
-    #         self.last_valid_position = np.array([center_x, center_y])
-            
-    #         if x < 0 or y < 0 or x + gif_frame.shape[1] > frame.shape[1] or y + gif_frame.shape[0] > frame.shape[0]:
-    #             return frame
-            
-    #         alpha = gif_frame[:, :, 3] / 255.0
-    #         alpha = np.stack([alpha] * 3, axis=-1)
-            
-    #         # Convert RGB to BGR for OpenCV
-    #         bgr = cv2.cvtColor(gif_frame[:, :, :3], cv2.COLOR_RGB2BGR)
-            
-    #         roi = frame[y:y+gif_frame.shape[0], x:x+gif_frame.shape[1]]
-    #         blended = roi * (1 - alpha) + bgr * alpha
-    #         frame[y:y+gif_frame.shape[0], x:x+gif_frame.shape[1]] = blended.astype(np.uint8)
-                    
-    #     except Exception as e:
-    #         print(f"Warning: Failed to overlay GIF frame: {str(e)}")
-                
-        return frame
     
     def _is_position_valid(self, position: np.ndarray) -> bool:
         """Check if position is within frame bounds"""
@@ -551,58 +503,6 @@ class BallTracker:
             )
         except Exception as e:
             print(f"Warning: Failed to add prediction indicator: {str(e)}")
-
-    # def annotate_frame(self, frame: np.ndarray, ball_coords: np.ndarray,
-    #                   predicted_position: np.ndarray,
-    #                   smoothed_path: List[np.ndarray],
-    #                   confidence: float) -> np.ndarray:
-    #     """Annotate frame with ball position and trajectory"""
-    #     annotated_frame = frame.copy()
-
-    #     # Draw predicted position
-    #     cv2.circle(
-    #         annotated_frame,
-    #         center=(int(predicted_position[0]), int(predicted_position[1])),
-    #         radius=5,
-    #         color=(0, 255, 0),  # Green for prediction
-    #         thickness=1
-    #     )
-
-    #     # Draw actual ball position if detected
-    #     if len(ball_coords) > 0:
-    #         cv2.circle(
-    #             annotated_frame,
-    #             center=(int(ball_coords[0]), int(ball_coords[1])),
-    #             radius=5,
-    #             color=(0, 0, 255),  # Red for actual detection
-    #             thickness=-1
-    #         )
-
-    #         # Add confidence score
-    #         cv2.putText(
-    #             annotated_frame,
-    #             f"Conf: {confidence:.2f}",
-    #             (int(ball_coords[0]) + 10, int(ball_coords[1]) - 10),
-    #             cv2.FONT_HERSHEY_SIMPLEX,
-    #             0.5,
-    #             (0, 0, 255),
-    #             1
-    #         )
-
-    #     # Draw smoothed trajectory
-    #     for i in range(1, len(smoothed_path)):
-    #         if len(smoothed_path[i]) > 0 and len(smoothed_path[i - 1]) > 0:
-    #             cv2.line(
-    #                 annotated_frame,
-    #                 pt1=(int(smoothed_path[i - 1][0]),
-    #                      int(smoothed_path[i - 1][1])),
-    #                 pt2=(int(smoothed_path[i][0]),
-    #                      int(smoothed_path[i][1])),
-    #                 color=(255, 255, 0),  # Yellow for trajectory
-    #                 thickness=2
-    #             )
-
-    #     return annotated_frame
 
 def main():
     # Create tracker with customizable parameters

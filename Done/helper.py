@@ -66,10 +66,6 @@ class LiveChangesWindow:
         # Apply Color Button
         ttk.Button(self.frame, text="Apply Color", command=self.apply_color).pack(pady=5)
 
-
-        # Save Configuration Button
-        ttk.Button(self.frame, text="Save Configuration", command=self.save_config).pack(pady=10)
-
         # Bind changes to update callback
         for var in [self.height_var, self.width_var, self.x_offset_var, self.y_offset_var]:
             var.trace_add("write", self.on_value_change)
@@ -140,15 +136,6 @@ class LiveChangesWindow:
             self.callback(values)
         except ValueError:
             pass  # Ignore invalid values
-
-    def save_config(self):
-        config = self.get_config()
-        try:
-            with open("tracker_config.json", "w") as f:
-                json.dump(config, f, indent=4)
-            tk.messagebox.showinfo("Success", "Configuration saved successfully!")
-        except Exception as e:
-            tk.messagebox.showerror("Error", f"Failed to save configuration: {str(e)}")
 
     # Function to convert BGR color to the desired string format
     def bgr_to_string(self, bgr_color):
@@ -433,6 +420,9 @@ class BallTrackerApp:
             left_point = (ball_x - triangle_width // 2 + horizontal_offset, ball_y - triangle_height - offset)
             right_point = (ball_x + triangle_width // 2 + horizontal_offset, ball_y - triangle_height - offset)
             
+            print(f"Triangle points: {top_point}, {left_point}, {right_point}")
+
+
             pts = np.array([top_point, left_point, right_point], np.int32)
             pts = pts.reshape((-1, 1, 2))
             cv2.fillPoly(frame, [pts], TRIANGLE_COLOR, cv2.LINE_AA)
