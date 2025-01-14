@@ -5,12 +5,14 @@ from ultralytics import YOLO
 from collections import deque
 from typing import List, Union, Tuple
 from scipy.signal import savgol_filter
+from tqdm import tqdm
 import os
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import json
 import threading
 from moviepy.editor import VideoFileClip
+import time
 
 # Basic tracking parameters
 BALL_ID = 0
@@ -477,6 +479,12 @@ class BallTracker:
             print(f"Warning: Failed to draw filled inverted triangle: {str(e)}")
             return frame
 
+    
+    def set_progress_callback(self, callback):
+        """Set callback for progress updates"""
+        self.progress_callback = callback
+
+
     def setup_kalman_filter(self):
         """Initialize a new Kalman filter"""
         self.kalman = cv2.KalmanFilter(4, 2)
@@ -709,12 +717,6 @@ class BallTracker:
             if self.video_writer is not None:
                 self.video_writer.release()
 
-    
-    def set_progress_callback(self, callback):
-        """Set callback for progress updates"""
-        self.progress_callback = callback
-
-
 
     def _process_frame(self, frame: np.ndarray):
         """Process single frame with trail and triangle indicator"""
@@ -737,7 +739,7 @@ class BallTracker:
         except Exception as e:
             print(f"Warning: Frame processing failed: {str(e)}")    
 
-# main() function:
+# Modify your main() function:
 def main():
     app = VideoProcessorGUI()
     app.run()

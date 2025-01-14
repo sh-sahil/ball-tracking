@@ -109,8 +109,8 @@ class LiveChangesWindow:
         self.y_offset_var = tk.StringVar(value="0")
         ttk.Entry(self.frame, textvariable=self.y_offset_var).pack()
 
-        # Save Configuration Button
-        ttk.Button(self.frame, text="Save Configuration", command=self.save_config).pack(pady=10)
+        # # Save Configuration Button
+        # ttk.Button(self.frame, text="Save Configuration", command=self.save_config).pack(pady=10)
         
         # Bind changes to update callback
         for var in [self.scale_var, self.x_offset_var, self.y_offset_var]:
