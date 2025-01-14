@@ -13,6 +13,7 @@ import json
 import threading
 from moviepy.editor import VideoFileClip
 import time
+from tqdm import tqdm 
 
 # Basic tracking parameters
 BALL_ID = 0
@@ -199,15 +200,18 @@ class VideoProcessorGUI:
         finally:
             self.start_button.config(state="normal")
     
-    def update_progress(self, current_frame, total_frames):
+    def update_progress(self, current_frame, total_frames, remaining_time):
         if total_frames > 0:
             progress = (current_frame / total_frames) * 100
             self.progress_var.set(progress)
-            self.status_var.set(f"Processing: {progress:.1f}%")
+            if remaining_time is not None:
+                formatted_time = time.strftime("%H:%M:%S", time.gmtime(remaining_time))
+                self.status_var.set(f"Processing: {progress:.1f}% - Remaining Time: {formatted_time}")
+            else:
+                self.status_var.set(f"Processing: {progress:.1f}%")
         else:
             self.status_var.set("Processing...")
         self.root.update()
-
     
     def add_audio(self, output_path):
         try:
@@ -479,11 +483,6 @@ class BallTracker:
             print(f"Warning: Failed to draw filled inverted triangle: {str(e)}")
             return frame
 
-    
-    def set_progress_callback(self, callback):
-        """Set callback for progress updates"""
-        self.progress_callback = callback
-
 
     def setup_kalman_filter(self):
         """Initialize a new Kalman filter"""
@@ -706,16 +705,26 @@ class BallTracker:
                 raise RuntimeError("Failed to create output video file")
 
             total_frames = self.video_info.total_frames
-            for i, frame in enumerate(self.frame_generator):
+            start_time = time.time()  # Track start time
+
+            for i, frame in enumerate(tqdm(self.frame_generator, total=total_frames, desc="Processing", unit="frame")):
                 self._process_frame(frame)
                 if self.progress_callback:
-                    self.progress_callback(i + 1, total_frames)  # +1 because frame count starts at 0
+                    elapsed_time = time.time() - start_time
+                    remaining_time = (total_frames - (i + 1)) * (elapsed_time / (i + 1)) if i > 0 else None
+                    self.progress_callback(i + 1, total_frames, remaining_time)
 
         except Exception as e:
             raise RuntimeError(f"Video processing failed: {str(e)}")
         finally:
             if self.video_writer is not None:
                 self.video_writer.release()
+
+    def set_progress_callback(self, callback):
+        """Set callback for progress updates"""
+        self.progress_callback = callback
+        # Initialize tqdm instance for later use in time estimation
+        self.tqdm_instance = tqdm(total=self.video_info.total_frames, desc="Processing", unit="frame", leave=False, position=0)
 
 
     def _process_frame(self, frame: np.ndarray):
